@@ -3,7 +3,7 @@ from pymongo import MongoClient
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import uvicorn
-import anthropic
+import google.generativeai as genai
 import pandas as pd
 import json
 import os
@@ -44,7 +44,8 @@ client = MongoClient(MONGO_URI)
 db = client[DB_NAME]
 collection = db[COLLECTION_NAME]
 ANTHROPIC_API_KEY=os.getenv("CLAUDE_KEY")
-claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+genai.configure(api_key=ANTHROPIC_API_KEY)
+# claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
 try:
     db.command("ping")  # Check if the database is connected
@@ -102,52 +103,37 @@ async def upload_file(file: UploadFile = File(...)):
 @app.get("/qa")
 def query_rag(question: str = Query(..., title="User Query")):
     """
-    Fetch relevant data from MongoDB based on the query and use Anthropic Claude to generate an answer.
+    Fetch relevant data from MongoDB based on the query and use Google's Gemini to generate an answer.
     """
     print(question)
-    
+
     # Retrieve relevant documents from MongoDB
     query_result = collection.find({}, {"_id": 0})  # Modify query condition as needed
     documents = list(query_result)
-    
+
     if not documents:
         return {"error": "No relevant data found in the database."}
-    
-    # Format retrieved documents as context
-    doc_texts = "\n".join([str(doc) for doc in documents])
-    doc_texts = [str(doc) for doc in documents]  # Convert it into a list
 
+    # Convert documents to text
+    doc_texts = [str(doc) for doc in documents]
+
+    # Compute TF-IDF similarity
     all_texts = [question] + doc_texts
-
-        # Compute TF-IDF vectorization
     vectorizer = TfidfVectorizer()
     tfidf_matrix = vectorizer.fit_transform(all_texts)
-
     similarity_scores = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:]).flatten()
 
-   # Get top relevant documents
-    top_n=5
+    # Get top relevant documents
+    top_n = 5
     top_indices = similarity_scores.argsort()[-top_n:][::-1]
     context_data = [documents[i] for i in top_indices]
 
-    # print(context_data)
-    
-    # Prepare messages for Anthropic API
-    messages = [
-        {"role": "user", "content": f"Context:\n{context_data}\n\nQuestion: {question}"}
-    ]
-    
-    # Generate response using Claude
-    response = claude.messages.create(
-        model="claude-3-haiku-20240307",
-        max_tokens=2048,
-        system="You are an AI assistant that provides answers based on provided context.",
-        messages=messages,
-        temperature=0.7,
-        top_p=1
-    )
+    # Prepare prompt for Gemini
+    print(context_data)
+    model = genai.GenerativeModel("gemini-1.5-pro")
+    response = model.generate_content(f"Context:\n{context_data}\n\nQuestion: {question}")
 
-    return {"answer": response.content[0].text}
+    return {"answer": response.text}
 
 
 if __name__ == "__main__":
