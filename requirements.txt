@@ -7,4 +7,4 @@ pandas
 python-dotenv
 google-cloud
 google-generativeai
-multipart
+python-multipart
