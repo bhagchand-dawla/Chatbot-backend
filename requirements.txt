@@ -8,3 +8,4 @@ python-dotenv
 google-cloud
 google-generativeai
 python-multipart
+openpyxl
